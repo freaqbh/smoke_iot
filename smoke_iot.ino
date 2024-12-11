@@ -13,6 +13,7 @@ const char* chatID = "6273579245"; // Ganti dengan ID Chat Anda
 
 WiFiClientSecure client; // Koneksi aman untuk HTTPS
 UniversalTelegramBot bot(botToken, client);
+WiFiClient clientThinkspeak;
 
 // Pin untuk sensor, buzzer, dan LED
 const int mq2Pin = 33;   // Pin analog untuk sensor MQ2
@@ -28,6 +29,40 @@ const float threshold = 10.0; // Ambang batas gas/asap
 MQUnifiedsensor MQ2(Board, Voltage_Resolution, ADC_Bit_Resolution, mq2Pin, "MQ-2");
 float prevPpm = 0; // Variabel untuk nilai PPM sebelumnya
 float fluctuation = 0; // Variabel untuk menghitung fluktuasi
+
+String thingSpeakAddress = "api.thingspeak.com"; 
+String writeAPIKey; 
+String tsfield1Name; 
+String request_string; 
+
+void kirim_thingspeak(float ppm) {
+  if (clientThinkspeak.connect("api.thingspeak.com", 80)) {
+    String url = "/update?api_key=ME9YLIA9OKUSURF5&field1=" + String(ppm);
+    clientThinkspeak.println("GET " + url + " HTTP/1.1");
+    clientThinkspeak.println("Host: api.thingspeak.com");
+    clientThinkspeak.println("Connection: close");
+    clientThinkspeak.println();
+
+    unsigned long timeout = millis();
+    while (clientThinkspeak.available() == 0) {
+      if (millis() - timeout > 5000) {
+        Serial.println(">>> Client timeout !");
+        clientThinkspeak.stop();
+        return;
+      }
+    }
+
+    while (clientThinkspeak.available()) {
+      String line = clientThinkspeak.readStringUntil('\r');
+      Serial.print(line);
+    }
+
+    clientThinkspeak.stop();
+    Serial.println("Connection closed.");
+  } else {
+    Serial.println("Failed to connect to ThingSpeak.");
+  }
+}
 
 
 void sendTelegramAlert(const String& type, float ppm) {
@@ -107,9 +142,11 @@ void loop() {
     if (fluctuation > 3) { // Asap cenderung fluktuasi besar
       Serial.println("WARNING: Smoke Detected!");
       sendTelegramAlert("Smoke", ppm);
+      kirim_thingspeak(String(ppm).toFloat());
     } else {
       Serial.println("WARNING: Gas Detected!");
       sendTelegramAlert("Gas", ppm);
+      kirim_thingspeak(String(ppm).toFloat());
     }
 
     // Aktifkan buzzer dan LED
@@ -121,6 +158,7 @@ void loop() {
     // Matikan buzzer dan LED
     digitalWrite(buzzerPin, HIGH);
     digitalWrite(ledPin, LOW);
+    kirim_thingspeak(String(ppm).toFloat());
   }
 
   delay(1000); // Tunggu 1 detik sebelum membaca lagi
